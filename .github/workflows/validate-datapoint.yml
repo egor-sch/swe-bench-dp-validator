@@ -63,7 +63,7 @@ jobs:
           path: ${{ steps.find_outputs.outputs.run_dir }}
           retention-days: 30
       
-      - name: Check validation result
+      - name: Fail workflow if validation failed
         if: steps.validate.outcome == 'failure'
         run: |
           echo "::error::Validation failed for data point: ${{ inputs.data_point_name }}"
