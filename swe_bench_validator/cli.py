@@ -2,22 +2,28 @@
 Command-line interface for the SWE-bench data point validator.
 """
 
+import json
+import logging
+import os
+import shutil
 import click
 from pathlib import Path
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 import sys
 
-from .validator import SWEBenchValidator
+from .validator import SWEBenchValidator, ValidationError
+from swebench.harness.constants import RUN_EVALUATION_LOG_DIR
 
 console = Console()
+tmp_dir_name = "tmp"
 
 
 @click.command()
 @click.option(
     "--data_point_name",
     required=True,
-    help="Data point file name to be validated in 'data_points' (without .json extension)",
+    help="Data point file name to be validated in 'data_points' directory",
 )
 @click.option(
     "--timeout",
@@ -47,19 +53,91 @@ def main(
     # Validate the data point
     validate_swe_bench.sh --data_point_name "astropy__astropy-11693.json"
     """
-    try:     
+    try:
+        # Configure logging level based on verbose flag
+        if verbose:
+            # Set root logger to INFO level to see harness progress
+            logging.basicConfig(
+                level=logging.INFO,
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%H:%M:%S'
+            )
+            # Also enable INFO level for swebench modules
+            logging.getLogger('swebench').setLevel(logging.INFO)
+        else:
+            # Default: only show WARNING and above
+            logging.basicConfig(
+                level=logging.WARNING,
+                format='%(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%H:%M:%S'
+            )
+        
+        # Create temporary directory for temporary files
+        tmp_dir = Path(tmp_dir_name)
+        tmp_dir.mkdir(exist_ok=True)
+        console.print(f"{tmp_dir} directory is created")
+
         # Initialize validator
         validator = SWEBenchValidator(
             data_point_name=data_point_name,
+            tmp_dir=tmp_dir,
             timeout=timeout,
         )
+
+        # Run the validation
+        validator.validate()
+        
+        console.print(f"[bold green]✓ Validation successful![/bold green]")
+        sys.exit(0)  # Success exit code
                 
-    except Exception as e:
-        console.print(f"[bold red]✗ Error: {str(e)}[/bold red]")
+    except ValidationError as e:
+        # Detailed validation error - show full message with log paths
+        error_prefix = {
+            "structural": "[bold yellow]⚠ Structural Error[/bold yellow]",
+            "test_failure": "[bold red]✗ Test Failure[/bold red]",
+            "execution": "[bold red]✗ Execution Error[/bold red]"
+        }.get(e.error_type, "[bold red]✗ Validation Error[/bold red]")
+        
+        console.print(f"{error_prefix}: {e.instance_id}")
+        console.print(f"[red]{e.message}[/red]")
+        
+        # Show log paths if run_id is available (not available for structural errors)
+        if e.run_id:
+            log_path = RUN_EVALUATION_LOG_DIR / e.run_id / "validator" / e.instance_id
+            console.print(f"[dim]Logs: {log_path}[/dim]")
+        
+        if verbose and e.tests_status:
+            console.print("\n[bold]Detailed test status:[/bold]")
+            console.print_json(json.dumps(e.tests_status, indent=2))
         if verbose:
             console.print_exception()
-        sys.exit(1)
+        
+        # Output GitHub Actions annotation
+        if os.getenv("GITHUB_ACTIONS"):
+            github_message = e.get_github_action_message()
+            print(f"::error::{github_message}")
+        
+        sys.exit(1)  # Failure exit code for GitHub Actions
+        
+    except Exception as e:
+        # Other unexpected errors (e.g., infrastructure, setup issues)
+        console.print(f"[bold red]✗ Unexpected Error[/bold red]: {str(e)}")
+        if verbose:
+            console.print_exception()
+        
+        # Output GitHub Actions annotation
+        if os.getenv("GITHUB_ACTIONS"):
+            print(f"::error::Unexpected error: {str(e)}")
+        
+        sys.exit(1)  # Failure exit code
+    finally:
+        try:
+            shutil.rmtree(tmp_dir)
+            console.print(f"{tmp_dir} directory is deleted")
+        except Exception as e:
+            console.print(f"{tmp_dir} directory deletion error: {str(e)}")
+
 
 
 if __name__ == "__main__":
-    main() 
+    main()
