@@ -43,11 +43,8 @@ jobs:
           VALIDATION_ARGS=""
           IFS=',' read -ra NAMES <<< "${{ inputs.data_point_names }}"
           for name in "${NAMES[@]}"; do
-            # Trim whitespace and add .json extension if not present
+            # Trim whitespace
             name=$(echo "$name" | xargs)
-            if [[ ! "$name" == *.json ]]; then
-              name="${name}.json"
-            fi
             VALIDATION_ARGS="$VALIDATION_ARGS --data_point_names '$name'"
           done
           
