@@ -3,8 +3,8 @@ name: Validate SWE-bench Data Point (Manual)
 on:
   workflow_dispatch:
     inputs:
-      data_point_name:
-        description: 'Data point file name to validate (without .json extension)'
+      data_point_names:
+        description: 'Data point file name(s) to validate (comma-separated, without .json extension). Example: astropy__astropy-11693,astropy__astropy-11692'
         required: false
         default: 'astropy__astropy-11693'
         type: string
@@ -38,7 +38,17 @@ jobs:
         continue-on-error: true
         run: |
           chmod +x scripts/validate_swe_bench.sh
-          ./scripts/validate_swe_bench.sh --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800 --verbose
+          
+          # Parse comma-separated data point names and build command
+          VALIDATION_ARGS=""
+          IFS=',' read -ra NAMES <<< "${{ inputs.data_point_names }}"
+          for name in "${NAMES[@]}"; do
+            # Trim whitespace
+            name=$(echo "$name" | xargs)
+            VALIDATION_ARGS="$VALIDATION_ARGS --data_point_names $name"
+          done
+          
+          ./scripts/validate_swe_bench.sh $VALIDATION_ARGS --timeout 1800 --verbose
       
       - name: Find harness output directory
         id: find_outputs
@@ -59,14 +69,14 @@ jobs:
         if: always() && steps.find_outputs.outputs.run_dir != ''
         uses: actions/upload-artifact@v4
         with:
-          name: validation-outputs-${{ inputs.data_point_name }}
+          name: validation-outputs-manual
           path: ${{ steps.find_outputs.outputs.run_dir }}
           retention-days: 30
       
       - name: Fail workflow if validation failed
         if: steps.validate.outcome != 'success'
         run: |
-          echo "::error::Validation failed for data point: ${{ inputs.data_point_name }}"
+          echo "::error::Validation failed for one or more data points"
           echo "Check the validation step output above for detailed error information."
           exit 1
 

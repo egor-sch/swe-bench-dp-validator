@@ -237,6 +237,11 @@ class SWEBenchValidator:
         """
         Analyze evaluation reports for all instances.
         
+        The harness creates a separate report.json file for each instance at:
+        logs/run_evaluation/{run_id}/validator/{instance_id}/report.json
+        
+        Each report.json contains a dictionary with the instance_id as the key.
+        
         Returns:
             dict: Dictionary mapping data point file names to results:
                 {
@@ -246,68 +251,43 @@ class SWEBenchValidator:
         """
         results = {}
         
-        # The harness creates a single report.json file with all instances
-        # Find the report file - it should be in the run directory
-        report_path = None
+        # Load all individual report files and combine them
+        combined_report = {}
         for instance_id in self.data_points.keys():
-            potential_path = (
+            report_path = (
                 RUN_EVALUATION_LOG_DIR 
                 / self.run_id 
                 / "validator" 
                 / instance_id 
                 / LOG_REPORT
             )
-            if potential_path.exists():
-                report_path = potential_path
-                break
-        
-        if report_path is None:
-            # Try to find any report.json in the run directory
-            run_dir = RUN_EVALUATION_LOG_DIR / self.run_id / "validator"
-            if run_dir.exists():
-                for subdir in run_dir.iterdir():
-                    if subdir.is_dir():
-                        potential_path = subdir / LOG_REPORT
-                        if potential_path.exists():
-                            report_path = potential_path
-                            break
-        
-        if report_path is None:
-            # No report found - mark all as failed
-            for instance_id in self.data_points.keys():
-                dp_name = self.instance_id_to_name[instance_id]
-                results[dp_name] = {
-                    "success": False,
-                    "error": ValidationError(
-                        instance_id,
-                        f"Evaluation report not found. The evaluation may have failed before completion. Check Docker logs and container status.",
-                        self.run_id,
-                        error_type="execution"
-                    )
-                }
-            return results
-        
-        # Load the report
-        with report_path.open("r", encoding="utf-8") as f:
-            report = json.load(f)
+            
+            if report_path.exists():
+                try:
+                    with report_path.open("r", encoding="utf-8") as f:
+                        instance_report = json.load(f)
+                    # Each report.json contains {instance_id: {...}}, so merge it
+                    combined_report.update(instance_report)
+                except Exception as e:
+                    logger.warning(f"Failed to load report for {instance_id}: {e}")
         
         # Analyze each instance
         for instance_id, data_point in self.data_points.items():
             dp_name = self.instance_id_to_name[instance_id]
             
-            if instance_id not in report:
+            if instance_id not in combined_report:
                 results[dp_name] = {
                     "success": False,
                     "error": ValidationError(
                         instance_id,
-                        f"Instance '{instance_id}' not found in evaluation report. This may indicate a mismatch between the data point and evaluation run. Report contains: {list(report.keys())}",
+                        f"Evaluation report not found for instance '{instance_id}'. The evaluation may have failed before completion. Check Docker logs and container status.",
                         self.run_id,
                         error_type="execution"
                     )
                 }
                 continue
             
-            instance_report = report[instance_id]
+            instance_report = combined_report[instance_id]
             
             try:
                 # Check for patch issues
@@ -385,83 +365,6 @@ class SWEBenchValidator:
                 results[dp_name] = {"success": False, "error": e}
         
         return results
-        
-        # Check for patch issues
-        if instance_report.get("patch_is_None", False):
-            raise ValidationError(
-                self.instance_id,
-                "Patch is None or empty. The data point's 'patch' field is missing or empty.",
-                self.run_id,
-                error_type="structural"
-            )
-        
-        if not instance_report.get("patch_exists", False):
-            raise ValidationError(
-                self.instance_id,
-                "Patch does not exist in the prediction file. This is an internal error - please report this issue.",
-                self.run_id,
-                error_type="execution"
-            )
-        
-        if not instance_report.get("patch_successfully_applied", False):
-            raise ValidationError(
-                self.instance_id,
-                "Patch failed to apply to the codebase. Possible causes: malformed patch format, incompatible with target files, or files have changed. Check the evaluation logs for detailed error messages.",
-                self.run_id,
-                error_type="execution"
-            )
-        
-        # Check resolution status
-        resolved = instance_report.get("resolved", False)
-        tests_status = instance_report.get("tests_status", {})
-        
-        if not resolved:
-            # Build detailed error message from tests_status
-            error_details = []
-            
-            fail_to_pass = tests_status.get("FAIL_TO_PASS", {})
-            fail_to_pass_failures = fail_to_pass.get("failure", [])
-            
-            pass_to_pass = tests_status.get("PASS_TO_PASS", {})
-            pass_to_pass_failures = pass_to_pass.get("failure", [])
-            
-            # Report FAIL_TO_PASS failures
-            if fail_to_pass_failures:
-                error_details.append(
-                    f"FAIL_TO_PASS tests still failing ({len(fail_to_pass_failures)}): "
-                    f"{', '.join(fail_to_pass_failures[:5])}"
-                    + (f" and {len(fail_to_pass_failures) - 5} more" if len(fail_to_pass_failures) > 5 else "")
-                )
-            
-            # Report PASS_TO_PASS failures
-            if pass_to_pass_failures:
-                error_details.append(
-                    f"PASS_TO_PASS tests broken ({len(pass_to_pass_failures)}): "
-                    f"{', '.join(pass_to_pass_failures[:5])}"
-                    + (f" and {len(pass_to_pass_failures) - 5} more" if len(pass_to_pass_failures) > 5 else "")
-                )
-            
-            if not error_details:
-                error_details.append("Tests did not pass, but specific test failures are not available.")
-            
-            error_message = "Test validation failed: " + "; ".join(error_details)
-            
-            raise ValidationError(
-                self.instance_id,
-                error_message,
-                self.run_id,
-                tests_status=tests_status,
-                error_type="test_failure"
-            )
-        
-        # Validation passed
-        console.print(f"[bold green]✓ Validation PASSED for {self.instance_id}[/bold green]")
-        console.print(f"  - Patch applied successfully")
-        console.print(f"  - All FAIL_TO_PASS tests now pass")
-        console.print(f"  - All PASS_TO_PASS tests remain passing")
-        
-        return True
-
 
 class ValidationError(Exception):
     """

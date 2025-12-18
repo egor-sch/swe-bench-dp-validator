@@ -78,7 +78,7 @@ jobs:
             if [ -n "$file_path" ]; then
               # Extract just the filename from the path
               filename=$(basename "$file_path")
-              VALIDATION_ARGS="$VALIDATION_ARGS --data_point_names '$filename'"
+              VALIDATION_ARGS="$VALIDATION_ARGS --data_point_names $filename"
             fi
           done <<< "${{ steps.changed_files.outputs.changed_files }}"
           
