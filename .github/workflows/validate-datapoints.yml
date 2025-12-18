@@ -1,0 +1,132 @@
+name: Validate SWE-bench Data Points
+
+on:
+  push:
+    paths:
+      - 'data_points/**'
+  pull_request:
+    paths:
+      - 'data_points/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    # Note: SWE-bench evaluation requires significant resources:
+    # - Docker with sufficient disk space (~120GB+ recommended)
+    # - At least 16GB RAM recommended
+    # - 8+ CPU cores recommended
+    # GitHub Actions free tier may have resource limitations.
+    # Consider using self-hosted runners or GitHub-hosted larger runners for production use.
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for detecting changed files
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      
+      - name: Detect changed data point files
+        id: changed_files
+        run: |
+          # For push events, compare with previous commit
+          # For PR events, compare with base branch
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.sha }}"
+          else
+            # For push, compare with previous commit
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+          
+          # Find changed JSON files in data_points directory
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" | grep "^data_points/.*\.json$" || true)
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No changed data point files found"
+            echo "changed_files=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Convert to array format and output
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "Found changed data point files:"
+          echo "$CHANGED_FILES"
+      
+      - name: Run validation on changed data points
+        id: validate
+        if: steps.changed_files.outputs.changed_files != ''
+        continue-on-error: true
+        run: |
+          chmod +x scripts/validate_swe_bench.sh
+          
+          # Extract file names from paths and build command
+          VALIDATION_ARGS=""
+          while IFS= read -r file_path; do
+            if [ -n "$file_path" ]; then
+              # Extract just the filename from the path
+              filename=$(basename "$file_path")
+              VALIDATION_ARGS="$VALIDATION_ARGS --data_point_names '$filename'"
+            fi
+          done <<< "${{ steps.changed_files.outputs.changed_files }}"
+          
+          if [ -n "$VALIDATION_ARGS" ]; then
+            ./scripts/validate_swe_bench.sh $VALIDATION_ARGS --timeout 1800 --verbose
+          fi
+      
+      - name: Find harness output directories
+        id: find_outputs
+        if: always() && steps.changed_files.outputs.changed_files != ''
+        run: |
+          # Find all run directories
+          RUN_DIRS=$(find logs/run_evaluation -type d -name "validator_*" 2>/dev/null | sort -r || true)
+          
+          if [ -z "$RUN_DIRS" ]; then
+            echo "No run directories found"
+            exit 0
+          fi
+          
+          # Create a temporary directory to collect all outputs
+          mkdir -p validation_outputs
+          
+          # Copy all run directories
+          for dir in $RUN_DIRS; do
+            cp -r "$dir" validation_outputs/ || true
+          done
+          
+          echo "run_dirs=validation_outputs" >> $GITHUB_OUTPUT
+          echo "Found run directories"
+      
+      - name: Upload harness logs and outputs
+        if: always() && steps.find_outputs.outputs.run_dirs != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-outputs-all
+          path: validation_outputs
+          retention-days: 30
+      
+      - name: Fail workflow if validation failed
+        if: steps.validate.outcome != 'success' && steps.changed_files.outputs.changed_files != ''
+        run: |
+          echo "::error::Validation failed for one or more data points"
+          echo "Check the validation step output above for detailed error information."
+          exit 1
+      
+      - name: Skip validation (no changed files)
+        if: steps.changed_files.outputs.changed_files == ''
+        run: |
+          echo "No data point files were changed in this push/PR"
+          echo "Skipping validation"
+

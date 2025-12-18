@@ -9,7 +9,7 @@ set -e
 # Change to the project root directory
 cd "$(dirname "$0")/.."
 
-# Install dependencices
+# Install dependencies
 uv sync
 
 # Use UV to run the Python module with all arguments passed through
