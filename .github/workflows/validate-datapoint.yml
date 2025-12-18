@@ -37,12 +37,8 @@ jobs:
         id: validate
         continue-on-error: true
         run: |
-          # Temporary: Direct uv run call to test exit code propagation
-          # TODO: Restore shell script call once exit code propagation is confirmed
-          # chmod +x scripts/validate_swe_bench.sh
-          # ./scripts/validate_swe_bench.sh --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800 --verbose
-          uv sync
-          uv run python -m swe_bench_validator --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800 --verbose
+          chmod +x scripts/validate_swe_bench.sh
+          ./scripts/validate_swe_bench.sh --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800 --verbose
       
       - name: Find harness output directory
         id: find_outputs
