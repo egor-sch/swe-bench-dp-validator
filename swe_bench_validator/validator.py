@@ -46,11 +46,14 @@ class SWEBenchValidator:
             raise RuntimeError(f"Data point '{self.data_point_path}' is missing 'instance_id' field")
 
         self.prediction_path = self._create_prediction(tmp_dir)
+        # Create a temporary dataset file with the instance wrapped in a list
+        # (load_swebench_dataset expects a list of instances, not a single object)
+        self.dataset_path = self._create_dataset_file()
         self.tmp_dir = tmp_dir
         self.timeout = timeout
         self.run_id = None  # Will be set during validation
         
-        console.print(f"Data point path: {self.data_point_path}\nInstance ID: {self.instance_id}\nPrediction file: {self.prediction_path}\nTimeout: {timeout}")
+        console.print(f"Data point path: {self.data_point_path}\nInstance ID: {self.instance_id}\nPrediction file: {self.dataset_path}\nData set file: {self.prediction_path}\nTimeout: {timeout}")
     
     def validate(self):
         """
@@ -76,7 +79,7 @@ class SWEBenchValidator:
             # Call SWE-bench evaluation harness
             # For a single instance, we use max_workers=1 (no parallelization needed)
             run_evaluation(
-                dataset_name=str(self.data_point_path),  # Path to local JSON file
+                dataset_name=str(self.dataset_path),  # Path to temporary dataset file (list format)
                 split="test",  # Default split (may not matter for local file)
                 instance_ids=[self.instance_id],  # Single instance to validate
                 predictions_path=str(self.prediction_path),
@@ -151,6 +154,30 @@ class SWEBenchValidator:
 
         logger.info(f"Prediction file created at: {prediction_path}")
         return prediction_path
+
+    def _create_dataset_file(self):
+        """
+        Create a temporary dataset file with the single instance wrapped in a list.
+        
+        load_swebench_dataset expects a JSON file containing a list of instances,
+        but our data point file contains a single instance object.
+        """
+        # Load the single instance
+        with self.data_point_path.open("r", encoding="utf-8") as f:
+            instance = json.load(f)
+        
+        # Wrap it in a list
+        dataset = [instance]
+        
+        # Save to temporary file
+        dataset_filename = f"dataset_{self.instance_id}.json"
+        dataset_path = self.tmp_dir / dataset_filename
+        
+        with dataset_path.open("w", encoding="utf-8") as f:
+            json.dump(dataset, f, indent=2)
+        
+        logger.info(f"Dataset file created at: {dataset_path}")
+        return dataset_path
 
     def _analyze_report(self):
         """
