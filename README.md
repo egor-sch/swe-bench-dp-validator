@@ -106,6 +106,35 @@ Manually trigger validation for specific data points from the GitHub Actions UI.
 - Re-validating existing data points
 - Debugging validation issues
 
+## Examples
+
+### Valid Data Point
+
+**File**: `data_points/astropy__astropy-11693.json`
+
+This data point contains a valid patch that properly handles the `NoConvergence` exception by catching it and emitting a warning instead of raising an error. The patch:
+
+- Successfully applies to the target repository
+- Makes all `FAIL_TO_PASS` tests pass (specifically `test_non_convergence_warning`)
+- Keeps all `PASS_TO_PASS` tests passing
+
+**Validation result**: ✅ Passes validation
+
+### Invalid Data Point
+
+**File**: `data_points/astropy__astropy-11693-fail.json`
+
+This data point contains an invalid patch that catches the `NoConvergence` exception but then re-raises it instead of handling it properly. The patch:
+
+- Applies successfully to the repository
+- **Fails** because `FAIL_TO_PASS` tests still fail (the exception is still raised)
+
+**Validation result**: ❌ Fails validation with error:
+```
+Test Failure: FAIL_TO_PASS tests still failing (1): 
+  - astropy/wcs/wcsapi/tests/test_fitswcs.py::test_non_convergence_warning
+```
+
 ## Architecture Documentation
 
 For detailed information about how the validator integrates with SWE-bench's Docker-based evaluation infrastructure, see [swe-bench-docker-architecture.md](swe-bench-docker-architecture.md).
