@@ -45,7 +45,7 @@ jobs:
           for name in "${NAMES[@]}"; do
             # Trim whitespace
             name=$(echo "$name" | xargs)
-            VALIDATION_ARGS="$VALIDATION_ARGS --data_point_names '$name'"
+            VALIDATION_ARGS="$VALIDATION_ARGS --data_point_names $name"
           done
           
           ./scripts/validate_swe_bench.sh $VALIDATION_ARGS --timeout 1800 --verbose
