@@ -1,0 +1,71 @@
+name: Validate SWE-bench Data Point
+
+on:
+  workflow_dispatch:
+    inputs:
+      data_point_name:
+        description: 'Data point file name to validate (without .json extension)'
+        required: false
+        default: 'astropy__astropy-11693'
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    # Note: SWE-bench evaluation requires significant resources:
+    # - Docker with sufficient disk space (~120GB+ recommended)
+    # - At least 16GB RAM recommended
+    # - 8+ CPU cores recommended
+    # GitHub Actions free tier may have resource limitations.
+    # Consider using self-hosted runners or GitHub-hosted larger runners for production use.
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      
+      - name: Run validation
+        id: validate
+        run: |
+          chmod +x scripts/validate_swe_bench.sh
+          ./scripts/validate_swe_bench.sh --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800
+        continue-on-error: true
+      
+      - name: Find harness output directory
+        id: find_outputs
+        if: always()
+        run: |
+          # Find the most recent run directory
+          RUN_DIR=$(find logs/run_evaluation -type d -name "validator_*" 2>/dev/null | sort -r | head -n 1)
+          
+          if [ -z "$RUN_DIR" ]; then
+            echo "No run directory found"
+            exit 0
+          fi
+          
+          echo "run_dir=$RUN_DIR" >> $GITHUB_OUTPUT
+          echo "Found run directory: $RUN_DIR"
+      
+      - name: Upload harness logs and outputs
+        if: always() && steps.find_outputs.outputs.run_dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-outputs-${{ inputs.data_point_name }}
+          path: ${{ steps.find_outputs.outputs.run_dir }}
+          retention-days: 30
+      
+      - name: Check validation result
+        if: steps.validate.outcome == 'failure'
+        run: |
+          echo "::error::Validation failed for data point: ${{ inputs.data_point_name }}"
+          exit 1
+
