@@ -51,7 +51,6 @@ def main(
     # Validate the data point
     validate_swe_bench.sh --data_point_name "astropy__astropy-11693.json"
     """
-
     try:
         # Configure logging level based on verbose flag
         if verbose:
@@ -87,7 +86,7 @@ def main(
         validator.validate()
         
         console.print(f"[bold green]✓ Validation successful![/bold green]")
-        return 0  # Success exit code
+        sys.exit(0)  # Success exit code
                 
     except ValidationError as e:
         # Detailed validation error - show full message with log paths
@@ -98,14 +97,14 @@ def main(
             console.print_json(json.dumps(e.tests_status, indent=2))
         if verbose:
             console.print_exception()
-        return 1  # Failure exit code for GitHub Actions
+        sys.exit(1)  # Failure exit code for GitHub Actions
         
     except Exception as e:
         # Other errors (e.g., infrastructure, setup issues)
         console.print(f"[bold red]✗ Error: {str(e)}[/bold red]")
         if verbose:
             console.print_exception()
-        return 1  # Failure exit code
+        sys.exit(1)  # Failure exit code
     finally:
         try:
             shutil.rmtree(tmp_dir)
@@ -116,5 +115,4 @@ def main(
 
 
 if __name__ == "__main__":
-    exit_code = main()
-    sys.exit(exit_code) 
+    main()
