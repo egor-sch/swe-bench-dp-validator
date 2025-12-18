@@ -48,8 +48,7 @@ class SWEBenchValidator:
         self.prediction_path = self._create_prediction(tmp_dir)
         # Create a temporary dataset file with the instance wrapped in a list
         # (load_swebench_dataset expects a list of instances, not a single object)
-        self.dataset_path = self._create_dataset_file()
-        self.tmp_dir = tmp_dir
+        self.dataset_path = self._create_dataset_file(tmp_dir)
         self.timeout = timeout
         self.run_id = None  # Will be set during validation
         
@@ -155,7 +154,7 @@ class SWEBenchValidator:
         logger.info(f"Prediction file created at: {prediction_path}")
         return prediction_path
 
-    def _create_dataset_file(self):
+    def _create_dataset_file(self, tmp_dir: Path):
         """
         Create a temporary dataset file with the single instance wrapped in a list.
         
@@ -171,7 +170,7 @@ class SWEBenchValidator:
         
         # Save to temporary file
         dataset_filename = f"dataset_{self.instance_id}.json"
-        dataset_path = self.tmp_dir / dataset_filename
+        dataset_path = tmp_dir / dataset_filename
         
         with dataset_path.open("w", encoding="utf-8") as f:
             json.dump(dataset, f, indent=2)
