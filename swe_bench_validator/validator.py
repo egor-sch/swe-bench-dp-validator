@@ -250,20 +250,38 @@ class SWEBenchValidator:
             
             fail_to_pass = tests_status.get("FAIL_TO_PASS", {})
             fail_to_pass_failures = fail_to_pass.get("failure", [])
+            fail_to_pass_passes = fail_to_pass.get("pass", [])
+            
+            pass_to_pass = tests_status.get("PASS_TO_PASS", {})
+            pass_to_pass_failures = pass_to_pass.get("failure", [])
+            pass_to_pass_passes = pass_to_pass.get("pass", [])
+            
+            # Report FAIL_TO_PASS status
             if fail_to_pass_failures:
                 error_details.append(
                     f"FAIL_TO_PASS tests still failing ({len(fail_to_pass_failures)}): "
                     f"{', '.join(fail_to_pass_failures[:5])}"
                     + (f" and {len(fail_to_pass_failures) - 5} more" if len(fail_to_pass_failures) > 5 else "")
                 )
+            elif fail_to_pass_passes:
+                error_details.append(
+                    f"✓ FAIL_TO_PASS tests now passing ({len(fail_to_pass_passes)}): "
+                    f"{', '.join(fail_to_pass_passes[:5])}"
+                    + (f" and {len(fail_to_pass_passes) - 5} more" if len(fail_to_pass_passes) > 5 else "")
+                )
             
-            pass_to_pass = tests_status.get("PASS_TO_PASS", {})
-            pass_to_pass_failures = pass_to_pass.get("failure", [])
+            # Report PASS_TO_PASS status
             if pass_to_pass_failures:
                 error_details.append(
                     f"PASS_TO_PASS tests broken ({len(pass_to_pass_failures)}): "
                     f"{', '.join(pass_to_pass_failures[:5])}"
                     + (f" and {len(pass_to_pass_failures) - 5} more" if len(pass_to_pass_failures) > 5 else "")
+                )
+            elif pass_to_pass_passes:
+                error_details.append(
+                    f"✓ PASS_TO_PASS tests still passing ({len(pass_to_pass_passes)}): "
+                    f"{', '.join(pass_to_pass_passes[:5])}"
+                    + (f" and {len(pass_to_pass_passes) - 5} more" if len(pass_to_pass_passes) > 5 else "")
                 )
             
             if not error_details:
