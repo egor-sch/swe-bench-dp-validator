@@ -67,5 +67,6 @@ jobs:
         if: steps.validate.outcome != 'success'
         run: |
           echo "::error::Validation failed for data point: ${{ inputs.data_point_name }}"
+          echo "Check the validation step output above for detailed error information."
           exit 1
 

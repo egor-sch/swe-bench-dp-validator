@@ -36,14 +36,50 @@ class SWEBenchValidator:
         self.data_point_path = Path(data_points_dir) / data_point_name
 
         if not self.data_point_path.exists():
-            raise RuntimeError(f"Data point '{self.data_point_path}' does not exist")
+            raise ValidationError(
+                data_point_name,
+                f"Data point file not found: '{self.data_point_path}'. Ensure the file exists in the 'data_points' directory.",
+                "",
+                error_type="structural"
+            )
 
-        # Load data point to get instance_id
-        with self.data_point_path.open("r", encoding="utf-8") as f:
-            data_point = json.load(f)
+        # Load data point to get instance_id - handle JSON parsing errors
+        try:
+            with self.data_point_path.open("r", encoding="utf-8") as f:
+                data_point = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValidationError(
+                data_point_name,
+                f"Invalid JSON format in data point file: {str(e)}. Please check the file syntax.",
+                "",
+                error_type="structural"
+            ) from e
+        except Exception as e:
+            raise ValidationError(
+                data_point_name,
+                f"Failed to read data point file: {str(e)}",
+                "",
+                error_type="structural"
+            ) from e
+        
+        # Validate required fields
         self.instance_id = data_point.get("instance_id")
         if self.instance_id is None:
-            raise RuntimeError(f"Data point '{self.data_point_path}' is missing 'instance_id' field")
+            raise ValidationError(
+                data_point_name,
+                f"Missing required field 'instance_id' in data point file. Please ensure the data point follows the SWE-bench format.",
+                "",
+                error_type="structural"
+            )
+        
+        patch = data_point.get("patch")
+        if patch is None or patch == "":
+            raise ValidationError(
+                self.instance_id,
+                f"Missing or empty 'patch' field in data point. The patch is required for validation.",
+                "",
+                error_type="structural"
+            )
 
         self.prediction_path = self._create_prediction(tmp_dir)
         # Create a temporary dataset file with the instance wrapped in a list
@@ -100,13 +136,17 @@ class SWEBenchValidator:
             # Analyze the report to determine if validation passed
             return self._analyze_report()
             
+        except ValidationError:
+            # Re-raise ValidationErrors as-is
+            raise
         except Exception as e:
             console.print(f"[bold red]✗ Evaluation failed for {self.instance_id}: {str(e)}[/bold red]")
             logger.error(f"Evaluation failed for {self.instance_id}: {e}", exc_info=True)
             raise ValidationError(
                 self.instance_id,
-                f"Evaluation harness failed: {str(e)}",
-                self.run_id
+                f"Evaluation harness encountered an unexpected error: {str(e)}. This may be a Docker, infrastructure, or harness issue. Check the logs for details.",
+                self.run_id,
+                error_type="execution"
             ) from e
 
     def _create_prediction(self, tmp_dir: Path):
@@ -198,11 +238,12 @@ class SWEBenchValidator:
         )
         
         if not report_path.exists():
-            raise ValidationError(
-                self.instance_id,
-                f"Report file not found at {report_path}. Evaluation may have failed before completion.",
-                self.run_id
-            )
+                    raise ValidationError(
+                        self.instance_id,
+                        f"Evaluation report not found at {report_path}. The evaluation may have failed before completion. Check Docker logs and container status.",
+                        self.run_id,
+                        error_type="execution"
+                    )
         
         # Load the report
         with report_path.open("r", encoding="utf-8") as f:
@@ -211,8 +252,9 @@ class SWEBenchValidator:
         if self.instance_id not in report:
             raise ValidationError(
                 self.instance_id,
-                f"Instance '{self.instance_id}' not found in report. Report keys: {list(report.keys())}",
-                self.run_id
+                f"Instance '{self.instance_id}' not found in evaluation report. This may indicate a mismatch between the data point and evaluation run. Report contains: {list(report.keys())}",
+                self.run_id,
+                error_type="execution"
             )
         
         instance_report = report[self.instance_id]
@@ -222,22 +264,24 @@ class SWEBenchValidator:
             raise ValidationError(
                 self.instance_id,
                 "Patch is None or empty. The data point's 'patch' field is missing or empty.",
-                self.run_id
+                self.run_id,
+                error_type="structural"
             )
         
         if not instance_report.get("patch_exists", False):
             raise ValidationError(
                 self.instance_id,
-                "Patch does not exist in the prediction.",
-                self.run_id
+                "Patch does not exist in the prediction file. This is an internal error - please report this issue.",
+                self.run_id,
+                error_type="execution"
             )
         
         if not instance_report.get("patch_successfully_applied", False):
             raise ValidationError(
                 self.instance_id,
-                "Patch failed to apply. The patch may be malformed, incompatible with the codebase, "
-                "or the target files may have changed. Check the evaluation logs for details.",
-                self.run_id
+                "Patch failed to apply to the codebase. Possible causes: malformed patch format, incompatible with target files, or files have changed. Check the evaluation logs for detailed error messages.",
+                self.run_id,
+                error_type="execution"
             )
         
         # Check resolution status
@@ -287,13 +331,14 @@ class SWEBenchValidator:
             if not error_details:
                 error_details.append("Tests did not pass, but specific test failures are not available.")
             
-            error_message = "Validation failed: " + "; ".join(error_details)
+            error_message = "Test validation failed: " + "; ".join(error_details)
             
             raise ValidationError(
                 self.instance_id,
                 error_message,
                 self.run_id,
-                tests_status=tests_status
+                tests_status=tests_status,
+                error_type="test_failure"
             )
         
         # Validation passed
@@ -314,13 +359,15 @@ class ValidationError(Exception):
         message: Detailed error message
         run_id: The evaluation run ID for locating logs
         tests_status: Optional detailed test status information
+        error_type: Type of error ('structural', 'execution', 'test_failure')
     """
     
-    def __init__(self, instance_id: str, message: str, run_id: str, tests_status: dict = None):
+    def __init__(self, instance_id: str, message: str, run_id: str, tests_status: dict = None, error_type: str = "execution"):
         self.instance_id = instance_id
         self.message = message
         self.run_id = run_id
         self.tests_status = tests_status
+        self.error_type = error_type
         super().__init__(f"[{instance_id}] {message}")
     
     def __str__(self):
@@ -332,3 +379,12 @@ class ValidationError(Exception):
             f"  - {log_path / 'test_output.txt'} (test output)\n"
             f"  - {log_path / 'report.json'} (evaluation report)"
         )
+    
+    def get_github_action_message(self) -> str:
+        """Get a formatted message for GitHub Actions annotations."""
+        if self.error_type == "structural":
+            return f"❌ Structural Error: {self.message}"
+        elif self.error_type == "test_failure":
+            return f"❌ Test Failure: {self.message}"
+        else:
+            return f"❌ Execution Error: {self.message}"
