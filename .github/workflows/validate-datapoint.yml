@@ -35,10 +35,10 @@ jobs:
       
       - name: Run validation
         id: validate
+        continue-on-error: true
         run: |
           chmod +x scripts/validate_swe_bench.sh
           ./scripts/validate_swe_bench.sh --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800
-        continue-on-error: true
       
       - name: Find harness output directory
         id: find_outputs
@@ -64,7 +64,7 @@ jobs:
           retention-days: 30
       
       - name: Fail workflow if validation failed
-        if: steps.validate.outcome == 'failure'
+        if: steps.validate.outcome != 'success'
         run: |
           echo "::error::Validation failed for data point: ${{ inputs.data_point_name }}"
           exit 1

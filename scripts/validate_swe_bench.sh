@@ -13,4 +13,7 @@ cd "$(dirname "$0")/.."
 uv sync
 
 # Use UV to run the Python module with all arguments passed through
+# Capture exit code to ensure it's propagated
 uv run python -m swe_bench_validator "$@"
+EXIT_CODE=$?
+exit $EXIT_CODE
