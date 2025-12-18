@@ -21,9 +21,10 @@ tmp_dir_name = "tmp"
 
 @click.command()
 @click.option(
-    "--data_point_name",
+    "--data_point_names",
+    multiple=True,
     required=True,
-    help="Data point file name to be validated in 'data_points' directory",
+    help="Data point file name(s) to validate in 'data_points' directory (can be used multiple times)",
 )
 @click.option(
     "--timeout",
@@ -41,19 +42,27 @@ tmp_dir_name = "tmp"
 
 
 def main(
-    data_point_name,
+    data_point_names,
     timeout,
     verbose
 ):
     """
-    Validate the specific SWE-bench data point using the official SWE-bench library.
+    Validate SWE-bench data point(s) using the official SWE-bench library.
     
     Examples:
     
-    # Validate the data point
-    validate_swe_bench.sh --data_point_name "astropy__astropy-11693.json"
+    # Validate a single data point
+    validate_swe_bench.sh --data_point_names "astropy__astropy-11693.json"
+    
+    # Validate multiple data points
+    validate_swe_bench.sh --data_point_names "astropy__astropy-11693.json" --data_point_names "astropy__astropy-11692.json"
     """
     try:
+        data_points = list(data_point_names)
+        if not data_points:
+            console.print("[bold red]Error: Must provide at least one data point name[/bold red]")
+            sys.exit(1)
+        
         # Configure logging level based on verbose flag
         if verbose:
             # Set root logger to INFO level to see harness progress
@@ -77,17 +86,56 @@ def main(
         tmp_dir.mkdir(exist_ok=True)
         console.print(f"{tmp_dir} directory is created")
 
-        # Initialize validator
+        # Validate all data points in parallel using the harness
+        console.print(f"[bold blue]Validating {len(data_points)} data point(s)...[/bold blue]")
+        
         validator = SWEBenchValidator(
-            data_point_name=data_point_name,
+            data_point_names=data_points,
             tmp_dir=tmp_dir,
             timeout=timeout,
         )
-
-        # Run the validation
-        validator.validate()
         
-        console.print(f"[bold green]✓ Validation successful![/bold green]")
+        results = validator.validate()
+        
+        # Process results
+        successful_validations = []
+        failed_validations = []
+        
+        for dp_name, result in results.items():
+            if result["success"]:
+                successful_validations.append(dp_name)
+                console.print(f"[bold green]✓ {dp_name}: Validation successful![/bold green]")
+            else:
+                error = result["error"]
+                failed_validations.append((dp_name, error))
+                error_prefix = {
+                    "structural": "[bold yellow]⚠[/bold yellow]",
+                    "test_failure": "[bold red]✗[/bold red]",
+                    "execution": "[bold red]✗[/bold red]"
+                }.get(error.error_type if isinstance(error, ValidationError) else "execution", "[bold red]✗[/bold red]")
+                error_msg = error.message if isinstance(error, ValidationError) else str(error)
+                console.print(f"{error_prefix} {dp_name}: {error_msg}")
+                
+                # Output GitHub Actions annotation
+                if os.getenv("GITHUB_ACTIONS"):
+                    if isinstance(error, ValidationError):
+                        github_message = error.get_github_action_message()
+                    else:
+                        github_message = f"Unexpected error: {str(error)}"
+                    print(f"::error file=data_points/{dp_name}::{github_message}")
+        
+        # Summary
+        console.print(f"\n[bold]Validation Summary:[/bold]")
+        console.print(f"  [green]✓ Successful: {len(successful_validations)}[/green]")
+        console.print(f"  [red]✗ Failed: {len(failed_validations)}[/red]")
+        
+        if failed_validations:
+            console.print(f"\n[bold red]Failed validations:[/bold red]")
+            for dp_name, error in failed_validations:
+                console.print(f"  - {dp_name}")
+            sys.exit(1)  # Failure exit code
+        
+        console.print(f"\n[bold green]✓ All validations successful![/bold green]")
         sys.exit(0)  # Success exit code
                 
     except ValidationError as e:

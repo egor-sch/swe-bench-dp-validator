@@ -1,4 +1,4 @@
-name: Validate SWE-bench Data Point
+name: Validate SWE-bench Data Point (Manual)
 
 on:
   workflow_dispatch:
