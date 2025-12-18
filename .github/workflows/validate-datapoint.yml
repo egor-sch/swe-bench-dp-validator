@@ -38,7 +38,7 @@ jobs:
         continue-on-error: true
         run: |
           chmod +x scripts/validate_swe_bench.sh
-          ./scripts/validate_swe_bench.sh --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800
+          ./scripts/validate_swe_bench.sh --data_point_name "${{ inputs.data_point_name }}.json" --timeout 1800 --verbose
       
       - name: Find harness output directory
         id: find_outputs

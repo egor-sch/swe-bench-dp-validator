@@ -3,6 +3,7 @@ Command-line interface for the SWE-bench data point validator.
 """
 
 import json
+import logging
 import shutil
 import click
 from pathlib import Path
@@ -52,6 +53,24 @@ def main(
     """
 
     try:
+        # Configure logging level based on verbose flag
+        if verbose:
+            # Set root logger to INFO level to see harness progress
+            logging.basicConfig(
+                level=logging.INFO,
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%H:%M:%S'
+            )
+            # Also enable INFO level for swebench modules
+            logging.getLogger('swebench').setLevel(logging.INFO)
+        else:
+            # Default: only show WARNING and above
+            logging.basicConfig(
+                level=logging.WARNING,
+                format='%(asctime)s - %(levelname)s - %(message)s',
+                datefmt='%H:%M:%S'
+            )
+        
         # Create temporary directory for temporary files
         tmp_dir = Path(tmp_dir_name)
         tmp_dir.mkdir(exist_ok=True)
