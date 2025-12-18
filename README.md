@@ -67,6 +67,45 @@ uv run python -m swe_bench_downloader --instance_id "django__django-12345"
 - `--split`: Data split ('train', 'test', 'dev', default: 'test')
 - `--limit`: Maximum number of data points to download
 
+## GitHub Actions
+
+This repository includes GitHub Actions workflows for automated validation:
+
+### Automated Validation (`validate-datapoints.yml`)
+
+Automatically validates data points when they are added or modified in pull requests or pushes.
+
+**Triggers:**
+- Push events affecting files in `data_points/**`
+- Pull request events affecting files in `data_points/**`
+
+**Features:**
+- Detects only changed/new data point files (performance optimization)
+- Validates all changed data points in parallel
+- Reports validation results as status checks
+- Uploads detailed logs and evaluation outputs as artifacts
+- Fails the workflow if any validation fails
+
+**Usage:** No manual action required - the workflow runs automatically when you push or create a PR with changes to `data_points/` files.
+
+### Manual Validation (`validate-datapoint-manual.yml`)
+
+Manually trigger validation for specific data points from the GitHub Actions UI.
+
+**Usage:**
+1. Go to the "Actions" tab in your repository
+2. Select "Validate SWE-bench Data Point (Manual)"
+3. Click "Run workflow"
+4. Enter data point name(s) (comma-separated, without `.json` extension)
+   - Example: `astropy__astropy-11693`
+   - Multiple: `astropy__astropy-11693,astropy__astropy-11692`
+5. Click "Run workflow"
+
+**Use cases:**
+- Testing validation before committing
+- Re-validating existing data points
+- Debugging validation issues
+
 ## Architecture Documentation
 
 For detailed information about how the validator integrates with SWE-bench's Docker-based evaluation infrastructure, see [swe-bench-docker-architecture.md](swe-bench-docker-architecture.md).
